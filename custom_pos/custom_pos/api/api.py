@@ -185,6 +185,10 @@ def register_pos_order(data):
     try:
         check_pos_permission()
         
+        # Parse data if it's a string
+        if isinstance(data, str):
+            data = frappe.parse_json(data)
+        
         # First validate stock for all items
         items = data.get("items", [])
         for item in items:
