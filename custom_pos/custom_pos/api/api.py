@@ -21,11 +21,18 @@ def check_pos_permission():
             frappe.throw(_("You do not have permission to access POS"), frappe.PermissionError)
     return True
 
+def check_cost_price_permission():
+    # Check if user has permission to view cost price (e.g., has "Accounts Manager" role or "System Manager" role)
+    user_roles = frappe.get_roles()
+    allowed_roles = ["System Manager", "Accounts Manager"]  # Customize these roles as needed
+    return any(role in user_roles for role in allowed_roles)
+
 @frappe.whitelist()
 def get_all_items_with_prices(price_list=None, category=None):
     try:
         # Check permissions first
         check_pos_permission()
+        can_see_cost_price = check_cost_price_permission()
         
         # Get POS Settings
         pos_settings = frappe.get_single("POS Settings")
@@ -36,22 +43,33 @@ def get_all_items_with_prices(price_list=None, category=None):
         if category and category != "all":
             filters["item_group"] = category
         
-        items = frappe.get_all("Item", filters=filters, fields=["name", "item_name", "item_code", "item_group", "image"], limit=items_per_page)
+        items = frappe.get_all("Item", filters=filters, fields=["name", "item_name", "item_code", "item_group", "image", "valuation_rate"], limit=items_per_page)
         
         if not items:
             return []
         
         item_codes = [item.item_code for item in items]
         
-        # Bulk fetch all prices
+        # Bulk fetch ALL prices (all price lists)
+        all_prices = frappe.get_all(
+            "Item Price",
+            filters={"item_code": ["in", item_codes], "selling": 1},
+            fields=["item_code", "price_list", "price_list_rate"]
+        )
+        
+        # Build a map for prices: item_code -> { price_list: rate }
+        item_prices_map = {}
+        for p in all_prices:
+            if p.item_code not in item_prices_map:
+                item_prices_map[p.item_code] = {}
+            item_prices_map[p.item_code][p.price_list] = p.price_list_rate
+        
+        # Also build the single price map for backward compatibility
         price_map = {}
         if price_list:
-            prices = frappe.get_all(
-                "Item Price",
-                filters={"item_code": ["in", item_codes], "price_list": price_list, "selling": 1},
-                fields=["item_code", "price_list_rate"]
-            )
-            price_map = {p.item_code: p.price_list_rate for p in prices}
+            for p in all_prices:
+                if p.price_list == price_list:
+                    price_map[p.item_code] = p.price_list_rate
         
         # Bulk fetch all stock
         stock_list = frappe.get_all(
@@ -90,6 +108,7 @@ def get_all_items_with_prices(price_list=None, category=None):
         result = []
         for item in items:
             price = price_map.get(item.item_code, 0)
+            all_prices_for_item = item_prices_map.get(item.item_code, {})
             stock = stock_map.get(item.item_code, [])
             total_stock = total_stock_map.get(item.item_code, 0)
             
@@ -103,6 +122,9 @@ def get_all_items_with_prices(price_list=None, category=None):
                 "item_group": item.item_group,
                 "image": item.image,
                 "price": price,
+                "all_prices": all_prices_for_item,
+                "cost_price": item.valuation_rate if can_see_cost_price else None,
+                "can_see_cost_price": can_see_cost_price,
                 "stock": stock
             })
         

@@ -229,9 +229,26 @@ function createVuePOSApp(main) {
                 <div style="font-size:3rem;">{{ currentItem?.image && !currentItem.image.startsWith('/') ? currentItem.image : '📦' }}</div>
                 <div style="font-size:1rem; font-weight:800; color:var(--text-primary); margin-top:8px;">{{ currentItem?.item_name }}</div>
                 <div style="font-size:1.3rem; font-weight:900; background:var(--accent-grad); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;">{{ currentItem?.price?.toFixed(2) }} ج.م</div>
+                
+                <!-- Show All Prices -->
+                <div style="margin-top:16px; text-align:right;">
+                    <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:8px;">💵 جميع الأسعار:</div>
+                    <div style="display:flex; flex-direction:column; gap:4px;">
+                        <div v-for="(price, pl) in currentItem?.all_prices" :key="pl" style="font-size:0.82rem; padding:4px 8px; background:var(--bg-glass); border-radius:4px;">
+                            <span style="color:var(--text-muted);">{{ pl }}:</span>
+                            <span style="font-weight:700; margin-right:8px;">{{ price.toFixed(2) }} ج.م</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Show Cost Price if Authorized -->
+                <div v-if="currentItem?.can_see_cost_price && currentItem?.cost_price" style="margin-top:12px; padding:8px; background:rgba(239, 68, 68, 0.1); border:1px solid rgba(239, 68, 68, 0.3); border-radius:8px; color:var(--danger);">
+                    <div style="font-size:0.8rem; font-weight:700;">💰 سعر الشراء:</div>
+                    <div style="font-size:1.1rem; font-weight:900;">{{ currentItem.cost_price.toFixed(2) }} ج.م</div>
+                </div>
             </div>
 
-            <div class="pos-section-title">اختر المخزن والكمية:</div>
+            <div class="pos-section-title">اختر المخزون والكمية:</div>
             <div class="pos-modal-wh-list">
                 <div
                     class="pos-modal-wh-row"
@@ -314,17 +331,17 @@ function createVuePOSApp(main) {
             }
         },
         setup() {
-        // ---- State ----
-        const loadingProducts = ref(true);
-        const submitting = ref(false);
-        const products = ref([]);
-        const filteredProducts = ref([]);
-        const itemGroups = ref([]);
-        const selectedCategory = ref('all');
-        const searchQuery = ref('');
-        const cart = ref([]);
-        const discount = ref(0);
-        const isLightTheme = ref(localStorage.getItem('posTheme') === 'light');
+            // ---- State ----
+            const loadingProducts = ref(true);
+            const submitting = ref(false);
+            const products = ref([]);
+            const filteredProducts = ref([]);
+            const itemGroups = ref([]);
+            const selectedCategory = ref('all');
+            const searchQuery = ref('');
+            const cart = ref([]);
+            const discount = ref(0);
+            const isLightTheme = ref(localStorage.getItem('posTheme') === 'light');
 
             // Customer search
             const customerQuery = ref('');
