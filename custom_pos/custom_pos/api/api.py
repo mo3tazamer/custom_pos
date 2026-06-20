@@ -246,7 +246,7 @@ def register_pos_order(data):
         si.cost_center = data.get("branch")
         si.discount_amount = flt(data.get("discount_amount", 0))
         si.company = company
-        si.is_pos = 0
+        si.is_pos = 1
         si.posting_date = frappe.utils.today()
         si.due_date = frappe.utils.today()
 
