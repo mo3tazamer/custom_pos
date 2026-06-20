@@ -3,29 +3,24 @@
 
 frappe.provide("custom_pos");
 
-$(document).on('page-change', function() {
-    if (frappe.get_route && frappe.get_route()[0] === "custom-pos") {
-        setTimeout(initVuePOS, 500);
-    }
-});
-
-function initVuePOS() {
-    var main = $(".layout-main-section");
+window.initVuePOS = function(wrapper) {
+    var main = $(wrapper).find(".layout-main-section");
     if (!main.length || main.find("#vue-pos-app").length) return;
 
     // Load Vue 3 from CDN if not loaded
     if (!window.Vue) {
         var script = document.createElement('script');
         script.src = 'https://unpkg.com/vue@3/dist/vue.global.js';
-        script.onload = createVueApp;
+        script.onload = function() {
+            createVueApp(wrapper, main);
+        };
         document.head.appendChild(script);
     } else {
-        createVueApp();
+        createVueApp(wrapper, main);
     }
-}
+};
 
-function createVueApp() {
-    var main = $(".layout-main-section");
+function createVueApp(wrapper, main) {
 
     main.html(`
         <div id="vue-pos-app" style="padding: 20px; font-family: 'Segoe UI', sans-serif;">
@@ -235,7 +230,7 @@ function createVueApp() {
             function loadInitialData() {
                 frappe.call({
                     method: 'frappe.client.get_list',
-                    args: { doctype: 'Sales Person', fields: ['name', 'sales_person_name'], filters: { enabled: 1 } },
+                    args: { doctype: 'Sales Person', fields: ['name', 'sales_person_name'], filters: { is_group: 0 } },
                     callback: (r) => {
                         if (r.message) {
                             sellers.value = r.message;
@@ -470,5 +465,8 @@ function createVueApp() {
         }
     });
 
-    app.mount('#vue-pos-app');
+    const appEl = main.find("#vue-pos-app")[0];
+    if (appEl) {
+        app.mount(appEl);
+    }
 }
