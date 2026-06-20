@@ -263,31 +263,30 @@ def register_pos_order(data):
         if not company:
             company = frappe.db.get_single_value('Global Defaults', 'default_company')
 
-        # 1. Create and insert POS Order
-        pos_order = frappe.get_doc({
-            "doctype": "POS Order",
-            "seller": data.get("seller"),
-            "customer": data.get("customer"),
-            "customer_phone": data.get("customer_phone"),
-            "company": company,
-            "posting_date": frappe.utils.today(),
-            "price_list": data.get("price_list"),
-            "branch": data.get("branch"),
-            "discount_amount": data.get("discount_amount", 0),
-            "status": "Draft",
-            "items": []
-        })
+        # 1. Create Sales Order
+        sales_order = frappe.new_doc("Sales Order")
+        sales_order.customer = data.get("customer")
+        sales_order.company = company
+        sales_order.selling_price_list = data.get("price_list")
+        sales_order.cost_center = data.get("branch")
+        sales_order.posting_date = frappe.utils.today()
+        sales_order.delivery_date = frappe.utils.today()
+        sales_order.discount_amount = flt(data.get("discount_amount", 0))
+
         for item in items:
-            pos_order.append("items", {
+            sales_order.append("items", {
                 "item_code": item["item_code"],
                 "qty": item["qty"],
                 "rate": item["rate"],
                 "warehouse": item["warehouse"]
             })
-        pos_order.insert()
-        pos_order.submit()
 
-        return {"name": pos_order.name, "sales_invoice": pos_order.sales_invoice}
+        # Set missing values and insert
+        sales_order.set_missing_values()
+        sales_order.insert()
+        sales_order.submit()  # This will reserve stock if ERPNext is configured for it
+
+        return {"name": sales_order.name}
     except Exception as e:
         frappe.log_error(f"Error in register_pos_order: {str(e)}")
         frappe.throw(_("Error: {0}").format(str(e)))
