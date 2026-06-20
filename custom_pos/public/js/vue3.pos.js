@@ -54,7 +54,7 @@ function createVuePOSApp(main) {
                         v-model="customerQuery"
                         @input="onCustomerInput"
                         @focus="showCustomerDropdown = true"
-                        placeholder="🔍 ابحث بالاسم أو التليفون..."
+                        placeholder="🔍 ابحث بالاسم أو التليفون أو party_cd..."
                         autocomplete="off"
                     >
                     <div class="pos-customer-dropdown" v-if="showCustomerDropdown && (customerResults.length > 0 || customerQuery.length >= 2)">
@@ -274,9 +274,15 @@ function createVuePOSApp(main) {
                 <label>اسم العميل *</label>
                 <input class="pos-input" v-model="newCustomerName" placeholder="أدخل اسم العميل...">
             </div>
-            <div class="pos-field-group" style="margin-bottom:22px;">
+            <div class="pos-field-group" style="margin-bottom:14px;">
                 <label>رقم الهاتف</label>
                 <input class="pos-input" v-model="newCustomerPhone" type="tel" placeholder="01xxxxxxxxx">
+            </div>
+            <div class="pos-field-group" style="margin-bottom:22px;">
+                <label>مجموعة العميل *</label>
+                <select class="pos-select" v-model="newCustomerGroup">
+                    <option v-for="g in customerGroups" :value="g.name">{{ g.customer_group_name || g.name }}</option>
+                </select>
             </div>
             <div style="display:flex; gap:10px;">
                 <button class="pos-btn pos-btn-primary" style="flex:1; justify-content:center;" @click="submitCreateCustomer" :disabled="!newCustomerName || creatingCustomer">
@@ -337,6 +343,8 @@ function createVuePOSApp(main) {
             const showCreateCustomer = ref(false);
             const newCustomerName = ref('');
             const newCustomerPhone = ref('');
+            const newCustomerGroup = ref('');
+            const customerGroups = ref([]);
             const creatingCustomer = ref(false);
 
             // Modal state
@@ -390,6 +398,17 @@ function createVuePOSApp(main) {
                             branches.value = r.message;
                             selectedBranch.value = r.message[0]?.name || '';
                             branchLabel.value = r.message[0]?.cost_center_name || r.message[0]?.name || 'الفرع';
+                        }
+                    }
+                });
+
+                // Load customer groups
+                frappe.call({
+                    method: 'custom_pos.custom_pos.api.api.get_customer_groups',
+                    callback: (r) => {
+                        if (r.message && r.message.length) {
+                            customerGroups.value = r.message;
+                            newCustomerGroup.value = r.message[0]?.name || '';
                         }
                     }
                 });
@@ -513,7 +532,7 @@ function createVuePOSApp(main) {
                 creatingCustomer.value = true;
                 frappe.call({
                     method: 'custom_pos.custom_pos.api.api.create_customer',
-                    args: { customer_name: newCustomerName.value, mobile_no: newCustomerPhone.value },
+                    args: { customer_name: newCustomerName.value, mobile_no: newCustomerPhone.value, customer_group: newCustomerGroup.value },
                     callback: (r) => {
                         creatingCustomer.value = false;
                         if (r.message) {
@@ -670,7 +689,7 @@ function createVuePOSApp(main) {
                 cart, discount, totalAmount, grandTotal,
                 customerQuery, customerResults, customerSearching,
                 showCustomerDropdown, selectedCustomer, selectedCustomerName,
-                showCreateCustomer, newCustomerName, newCustomerPhone, creatingCustomer,
+                showCreateCustomer, newCustomerName, newCustomerPhone, newCustomerGroup, customerGroups, creatingCustomer,
                 showModal, currentItem, selectedWh, whQty,
                 modalTotalQty, modalTotal,
                 branches, priceLists, sellers,

@@ -186,12 +186,13 @@ def search_customer(query):
         if not query or len(query) < 2:
             return []
         results = frappe.db.sql("""
-            SELECT name, customer_name, mobile_no
+            SELECT name, customer_name, mobile_no, customer_group
             FROM `tabCustomer`
             WHERE disabled = 0 AND (
                 customer_name LIKE %(q)s OR
                 mobile_no LIKE %(q)s OR
-                name LIKE %(q)s
+                name LIKE %(q)s OR
+                party_cd LIKE %(q)s
             )
             LIMIT 20
         """, {"q": f"%{query}%"}, as_dict=True)
@@ -201,18 +202,29 @@ def search_customer(query):
         return []
 
 @frappe.whitelist()
-def create_customer(customer_name, mobile_no=None):
+def get_customer_groups():
+    try:
+        check_pos_permission()
+        groups = frappe.get_all("Customer Group", filters={"is_group": 0}, fields=["name", "customer_group_name"])
+        return groups
+    except Exception as e:
+        frappe.log_error(f"Error in get_customer_groups: {str(e)}")
+        return []
+
+@frappe.whitelist()
+def create_customer(customer_name, mobile_no=None, customer_group=None):
     try:
         check_pos_permission()
         # Get default values
-        default_group = frappe.db.get_single_value("Selling Settings", "customer_group") or "All Customer Groups"
+        if not customer_group:
+            customer_group = frappe.db.get_single_value("Selling Settings", "customer_group") or "All Customer Groups"
         default_territory = frappe.db.get_single_value("Selling Settings", "territory") or "All Territories"
 
         customer = frappe.get_doc({
             "doctype": "Customer",
             "customer_name": customer_name,
             "customer_type": "Individual",
-            "customer_group": default_group,
+            "customer_group": customer_group,
             "territory": default_territory,
             "mobile_no": mobile_no or ""
         })
@@ -268,6 +280,7 @@ def register_pos_order(data):
         sales_order.posting_date = frappe.utils.today()
         sales_order.delivery_date = frappe.utils.today()
         sales_order.discount_amount = flt(data.get("discount_amount", 0))
+        sales_order.sales_person = data.get("seller")  # Set sales person here!
 
         for item in items:
             sales_order.append("items", {
