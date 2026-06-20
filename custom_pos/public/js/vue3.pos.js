@@ -25,13 +25,18 @@ function createVuePOSApp(main) {
     const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
 
     const APP_TEMPLATE = `
-<div id="pos-root">
+<div id="pos-root" :class="{ 'theme-light': isLightTheme }">
     <!-- Header -->
     <div class="pos-header">
         <h1>🛍️ نقطة البيع</h1>
-        <div class="meta">
-            <span>👨‍💼 {{ sellerLabel }}</span>
-            <span>🏪 {{ branchLabel }}</span>
+        <div class="pos-header-right">
+            <div class="meta">
+                <span>👨‍💼 {{ sellerLabel }}</span>
+                <span>🏪 {{ branchLabel }}</span>
+            </div>
+            <button class="theme-toggle-btn" @click="toggleTheme">
+                {{ isLightTheme ? '🌙 داكن' : '☀️ فاتح' }}
+            </button>
         </div>
     </div>
 
@@ -309,16 +314,17 @@ function createVuePOSApp(main) {
             }
         },
         setup() {
-            // ---- State ----
-            const loadingProducts = ref(true);
-            const submitting = ref(false);
-            const products = ref([]);
-            const filteredProducts = ref([]);
-            const itemGroups = ref([]);
-            const selectedCategory = ref('all');
-            const searchQuery = ref('');
-            const cart = ref([]);
-            const discount = ref(0);
+        // ---- State ----
+        const loadingProducts = ref(true);
+        const submitting = ref(false);
+        const products = ref([]);
+        const filteredProducts = ref([]);
+        const itemGroups = ref([]);
+        const selectedCategory = ref('all');
+        const searchQuery = ref('');
+        const cart = ref([]);
+        const discount = ref(0);
+        const isLightTheme = ref(localStorage.getItem('posTheme') === 'light');
 
             // Customer search
             const customerQuery = ref('');
@@ -632,6 +638,11 @@ function createVuePOSApp(main) {
             }
 
             // ---- Helpers ----
+            function toggleTheme() {
+                isLightTheme.value = !isLightTheme.value;
+                localStorage.setItem('posTheme', isLightTheme.value ? 'light' : 'dark');
+                showToast(`تم التغيير إلى الوضع ${isLightTheme.value ? 'الفاتح' : 'الداكن'}`, 'success');
+            }
             function onPriceListChange() { loadProducts(); showToast('تم تغيير قائمة الأسعار', 'success'); }
             function onSellerChange() {
                 const s = sellers.value.find(x => x.name === selectedSeller.value);
@@ -665,6 +676,7 @@ function createVuePOSApp(main) {
                 branches, priceLists, sellers,
                 selectedBranch, selectedPriceList, selectedSeller,
                 sellerLabel, branchLabel, toast,
+                isLightTheme, toggleTheme,
                 setCategory, filterProducts,
                 onCustomerInput, selectCustomer, clearCustomer, closeCustomerDropdown,
                 openCreateCustomer, submitCreateCustomer,
