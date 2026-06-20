@@ -256,12 +256,21 @@ def register_pos_order(data):
                     item_code, warehouse, actual_qty, qty
                 ))
         
+        # Get company from cost center or defaults
+        company = None
+        if data.get("branch"):
+            company = frappe.get_value("Cost Center", data.get("branch"), "company")
+        if not company:
+            company = frappe.db.get_single_value('Global Defaults', 'default_company')
+
         # 1. Create and insert POS Order
         pos_order = frappe.get_doc({
             "doctype": "POS Order",
             "seller": data.get("seller"),
             "customer": data.get("customer"),
             "customer_phone": data.get("customer_phone"),
+            "company": company,
+            "posting_date": frappe.utils.today(),
             "price_list": data.get("price_list"),
             "branch": data.get("branch"),
             "discount_amount": data.get("discount_amount", 0),
@@ -273,46 +282,12 @@ def register_pos_order(data):
                 "item_code": item["item_code"],
                 "qty": item["qty"],
                 "rate": item["rate"],
-                "warehouse": item["warehouse"],
-                "amount": flt(item["qty"]) * flt(item["rate"])
+                "warehouse": item["warehouse"]
             })
         pos_order.insert()
+        pos_order.submit()
 
-        # 2. Get company from cost center or defaults
-        company = None
-        if data.get("branch"):
-            company = frappe.get_value("Cost Center", data.get("branch"), "company")
-        if not company:
-            company = frappe.db.get_single_value('Global Defaults', 'default_company')
-
-        # 3. Create and insert Sales Invoice
-        si = frappe.new_doc("Sales Invoice")
-        si.customer = data.get("customer")
-        si.selling_price_list = data.get("price_list")
-        si.cost_center = data.get("branch")
-        si.discount_amount = flt(data.get("discount_amount", 0))
-        si.company = company
-        si.is_pos = 1
-        si.posting_date = frappe.utils.today()
-        si.due_date = frappe.utils.today()
-
-        for item in items:
-            si.append("items", {
-                "item_code": item["item_code"],
-                "qty": item["qty"],
-                "rate": item["rate"],
-                "warehouse": item["warehouse"],
-                "amount": flt(item["qty"]) * flt(item["rate"])
-            })
-
-        si.set_missing_values()
-        si.insert()
-
-        # 4. Link Sales Invoice to POS Order and save
-        pos_order.sales_invoice = si.name
-        pos_order.save()
-
-        return {"name": pos_order.name, "sales_invoice": si.name}
+        return {"name": pos_order.name, "sales_invoice": pos_order.sales_invoice}
     except Exception as e:
         frappe.log_error(f"Error in register_pos_order: {str(e)}")
         frappe.throw(_("Error: {0}").format(str(e)))
