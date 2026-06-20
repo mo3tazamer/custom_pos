@@ -1,311 +1,528 @@
-// Vue 3 POS for ERPNext v16 - No build needed!
-// Uses Vue 3 CDN + Frappe API
+// ============================================
+// Custom POS v2 - Modern Glassmorphic Design
+// Categories | Warehouse Display | Customer Search & Create
+// ============================================
 
 frappe.provide("custom_pos");
 
 window.initVuePOS = function(wrapper) {
     var main = $(wrapper).find(".layout-main-section");
-    if (!main.length || main.find("#vue-pos-app").length) return;
+    if (!main.length || main.find("#pos-root").length) return;
 
-    // Load Vue 3 from CDN if not loaded
     if (!window.Vue) {
         var script = document.createElement('script');
         script.src = 'https://unpkg.com/vue@3/dist/vue.global.js';
-        script.onload = function() {
-            createVueApp(wrapper, main);
-        };
+        script.onload = function() { createVuePOSApp(main); };
         document.head.appendChild(script);
     } else {
-        createVueApp(wrapper, main);
+        createVuePOSApp(main);
     }
 };
 
-function createVueApp(wrapper, main) {
+function createVuePOSApp(main) {
+    main.html('<div id="pos-root"></div>');
 
-    main.html(`
-        <div id="vue-pos-app" style="padding: 20px; font-family: 'Segoe UI', sans-serif;">
-            <div v-if="loading" style="text-align: center; padding: 50px;">
-                <div style="width: 50px; height: 50px; border: 4px solid #ddd; border-top-color: #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
-                <div style="margin-top: 15px;">جاري التحميل...</div>
-            </div>
+    const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
 
-            <div v-else>
-                <!-- Header -->
-                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
-                    <h2 style="margin: 0;">🛍️ POS تسجيل طلب</h2>
-                    <div style="display: flex; gap: 20px; margin-top: 10px;">
-                        <span>👨‍💼 {{ sellerName }}</span>
-                        <span>🏪 {{ branchName }}</span>
-                    </div>
+    const APP_TEMPLATE = `
+<div id="pos-root">
+    <!-- Header -->
+    <div class="pos-header">
+        <h1>🛍️ نقطة البيع</h1>
+        <div class="meta">
+            <span>👨‍💼 {{ sellerLabel }}</span>
+            <span>🏪 {{ branchLabel }}</span>
+        </div>
+    </div>
+
+    <!-- Info Bar -->
+    <div class="pos-card pos-infobar">
+        <!-- Customer Unified Search -->
+        <div class="pos-field-group" style="flex:1; min-width:240px;">
+            <label>👤 العميل</label>
+            <div class="pos-customer-box" v-click-outside="closeCustomerDropdown">
+                <!-- Show selected customer -->
+                <div v-if="selectedCustomer" class="pos-customer-selected" @click="clearCustomer">
+                    <span class="pos-customer-tag">👤 {{ selectedCustomerName }}</span>
+                    <span class="pos-customer-clear" title="تغيير">✕</span>
                 </div>
-
-                <!-- Info Bar -->
-                <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">📱 تليفون العميل</label>
-                        <div style="display: flex; gap: 5px;">
-                            <input v-model="customerPhone" type="tel" placeholder="01xxxxxxxxx" style="padding: 10px; border: 1px solid #ddd; border-radius: 6px; width: 150px;">
-                            <button @click="searchCustomer" style="padding: 10px 15px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer;">🔍</button>
-                        </div>
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">👤 العميل</label>
-                        <select v-model="selectedCustomer" style="padding: 10px; border: 1px solid #ddd; border-radius: 6px; width: 180px;">
-                            <option value="">-- اختر --</option>
-                            <option v-for="c in customers" :value="c.name">{{ c.customer_name || c.name }}</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">🏪 الفرع</label>
-                        <select v-model="selectedBranch" style="padding: 10px; border: 1px solid #ddd; border-radius: 6px; width: 180px;">
-                            <option v-for="b in branches" :value="b.name">{{ b.cost_center_name || b.name }}</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">💰 قائمة الأسعار</label>
-                        <select v-model="selectedPriceList" @change="onPriceListChange" style="padding: 10px; border: 1px solid #ddd; border-radius: 6px; width: 180px;">
-                            <option v-for="p in priceLists" :value="p.name">{{ p.name }}</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">👨‍💼 البائع</label>
-                        <select v-model="selectedSeller" style="padding: 10px; border: 1px solid #ddd; border-radius: 6px; width: 180px;">
-                            <option v-for="s in sellers" :value="s.name">{{ s.sales_person_name || s.name }}</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Search -->
-                <div style="margin-bottom: 20px;">
-                    <input v-model="searchQuery" @keyup="searchItems" type="text" placeholder="🔍 بحث بالصنف..." style="padding: 12px; width: 100%; max-width: 500px; border: 2px solid #ddd; border-radius: 8px; font-size: 16px;">
-                </div>
-
-                <!-- Main Content -->
-                <div style="display: flex; gap: 20px;">
-                    <!-- Products -->
-                    <div style="flex: 2;">
-                        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 15px;">
-                            <div v-for="product in filteredProducts" :key="product.item_code" @click="openModal(product)" style="background: white; padding: 15px; border-radius: 12px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s; text-align: center;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                                <div style="font-size: 45px; margin-bottom: 8px;">{{ product.image || '📦' }}</div>
-                                <div style="font-weight: bold; color: #333; margin-bottom: 5px; font-size: 14px;">{{ product.item_name }}</div>
-                                <div style="color: #667eea; font-weight: bold; font-size: 18px; margin-bottom: 5px;">{{ product.price?.toFixed(2) }} ج.م</div>
-                                <div style="font-size: 12px;" :style="getStockStyle(product)">{{ getStockText(product) }}</div>
+                <!-- Search input -->
+                <div v-else style="position:relative;">
+                    <input
+                        class="pos-input"
+                        v-model="customerQuery"
+                        @input="onCustomerInput"
+                        @focus="showCustomerDropdown = true"
+                        placeholder="🔍 ابحث بالاسم أو التليفون..."
+                        autocomplete="off"
+                    >
+                    <!-- Dropdown -->
+                    <div class="pos-customer-dropdown" v-if="showCustomerDropdown && (customerResults.length > 0 || customerQuery.length >= 2)">
+                        <div v-if="customerSearching" style="padding:12px 14px; color:var(--text-muted); font-size:0.84rem;">⏳ جاري البحث...</div>
+                        <template v-else>
+                            <div
+                                class="pos-customer-option"
+                                v-for="c in customerResults"
+                                :key="c.name"
+                                @click="selectCustomer(c)"
+                            >
+                                <div class="cname">{{ c.customer_name }}</div>
+                                <div class="cphone" v-if="c.mobile_no">📱 {{ c.mobile_no }}</div>
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- Cart -->
-                    <div style="flex: 1; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); min-height: 400px;">
-                        <h3 style="margin-top: 0; color: #333; border-bottom: 2px solid #667eea; padding-bottom: 10px;">🛒 السلة ({{ cart.length }})</h3>
-                        <div v-if="cart.length === 0" style="text-align: center; color: #999; padding: 40px;">
-                            <div style="font-size: 40px;">🛒</div>
-                            <div>السلة فارغة</div>
-                        </div>
-                        <div v-else>
-                            <div v-for="(item, index) in cart" :key="index" style="padding: 12px; border-bottom: 1px solid #eee; margin-bottom: 8px;">
-                                <div style="display: flex; justify-content: space-between;">
-                                    <span style="font-weight: bold;">{{ item.emoji }} {{ item.item_name }}</span>
-                                    <span style="color: #666; font-size: 12px;">📦 {{ item.warehouse }}</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
-                                    <span>
-                                        <button @click="changeQty(index, -1)" style="padding: 4px 10px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">−</button>
-                                        <span style="margin: 0 10px; font-weight: bold;">{{ item.qty }}</span>
-                                        <button @click="changeQty(index, 1)" style="padding: 4px 10px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">+</button>
-                                    </span>
-                                    <span style="color: #667eea; font-weight: bold;">{{ item.amount.toFixed(2) }} ج.م</span>
-                                    <button @click="removeItem(index)" style="background: none; border: none; cursor: pointer; font-size: 18px; color: #f44336;">🗑️</button>
-                                </div>
+                            <div v-if="!customerResults.length && customerQuery.length >= 2" class="pos-customer-create-btn" @click="openCreateCustomer">
+                                ➕ إنشاء عميل جديد "{{ customerQuery }}"
                             </div>
-                            <div style="margin-top: 20px; padding-top: 15px; border-top: 2px solid #eee;">
-                                <div style="display: flex; justify-content: space-between; margin: 8px 0;">
-                                    <span>الكمية:</span>
-                                    <span style="font-weight: bold;">{{ totalQty }}</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; margin: 8px 0;">
-                                    <span>المجموع:</span>
-                                    <span style="font-weight: bold;">{{ totalAmount.toFixed(2) }}</span> ج.م
-                                </div>
-                                <div style="display: flex; justify-content: space-between; margin: 8px 0; align-items: center;">
-                                    <span>الخصم:</span>
-                                    <input v-model.number="discount" type="number" min="0" style="width: 80px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
-                                </div>
-                                <div style="display: flex; justify-content: space-between; margin: 15px 0; padding: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; font-size: 18px; font-weight: bold;">
-                                    <span>الإجمالي:</span>
-                                    <span>{{ grandTotal.toFixed(2) }}</span> ج.م
-                                </div>
-                            </div>
-                            <button @click="registerOrder" style="width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; margin-bottom: 10px;">💾 تسجيل الطلب</button>
-                            <button @click="clearCart" style="width: 100%; padding: 12px; background: #f44336; color: white; border: none; border-radius: 8px; cursor: pointer;">❌ إفراغ السلة</button>
-                        </div>
+                            <div v-if="!customerResults.length && customerQuery.length < 2" style="padding:10px 14px; color:var(--text-muted); font-size:0.8rem;">اكتب للبحث...</div>
+                        </template>
                     </div>
-                </div>
-
-                <!-- Modal -->
-                <div v-if="showModal" style="display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 9999; align-items: center; justify-content: center;">
-                    <div style="background: white; padding: 25px; border-radius: 15px; width: 450px; max-width: 90%; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                            <h3 style="margin: 0; color: #333;">➕ إضافة صنف</h3>
-                            <button @click="showModal = false" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #999;">✕</button>
-                        </div>
-                        <div style="text-align: center; margin-bottom: 15px;">
-                            <div style="font-size: 50px;">{{ currentItem?.image || '📦' }}</div>
-                            <div style="font-size: 18px; font-weight: bold; color: #333;">{{ currentItem?.item_name }}</div>
-                            <div style="color: #667eea; font-size: 22px; font-weight: bold;">{{ currentItem?.price?.toFixed(2) }} ج.م</div>
-                        </div>
-                        <div style="margin-bottom: 15px;">
-                            <div style="font-weight: bold; margin-bottom: 10px; color: #555;">📦 اختر المخازن:</div>
-                            <div v-for="(wh, idx) in currentItem?.stock" :key="idx" @click="toggleWh(idx)" :style="{ opacity: wh.actual_qty <= 0 ? 0.5 : 1, background: selectedWh.includes(idx) ? '#e8f5e9' : 'white' }" style="padding: 10px; border: 1px solid #ddd; margin: 8px 0; border-radius: 8px; cursor: pointer;">
-                                <input type="checkbox" :checked="selectedWh.includes(idx)" :disabled="wh.actual_qty <= 0" style="margin-left: 10px;" @click.stop>
-                                <label style="margin-left: 8px; font-weight: bold;">{{ wh.warehouse_name || wh.warehouse }}</label>
-                                <span style="margin-left: 10px; color: #4caf50; font-size: 12px;">{{ wh.actual_qty <= 0 ? '❌ غير متوفر' : '✅ متوفر: ' + wh.actual_qty }}</span>
-                                <input v-if="selectedWh.includes(idx)" v-model.number="whQty[idx]" type="number" min="1" :max="wh.actual_qty" style="width: 60px; margin-right: 10px;" @click.stop>
-                            </div>
-                        </div>
-                        <div style="text-align: center; padding: 12px; background: #e8f5e9; border-radius: 8px; margin: 15px 0; font-weight: bold; color: #2e7d32;">
-                            الإجمالي: {{ modalTotalQty }} × {{ currentItem?.price?.toFixed(2) }} = {{ modalTotal.toFixed(2) }} ج.م
-                        </div>
-                        <div style="text-align: center;">
-                            <button @click="addToCart" style="padding: 12px 25px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold;">➕ أضف للسلة</button>
-                            <button @click="showModal = false" style="padding: 12px 25px; background: #f44336; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; margin-left: 10px;">❌ إلغاء</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Toast -->
-                <div v-if="toast.show" :style="{ background: toast.type === 'error' ? '#f44336' : toast.type === 'warning' ? '#ff9800' : '#4caf50' }" style="display: block; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); color: white; padding: 14px 28px; border-radius: 8px; z-index: 10000; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-                    {{ toast.message }}
-                </div>
-
-                <!-- Loading -->
-                <div v-if="loading" style="display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.9); z-index: 10001; align-items: center; justify-content: center; flex-direction: column;">
-                    <div style="width: 50px; height: 50px; border: 4px solid #ddd; border-top-color: #667eea; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-                    <div style="margin-top: 15px; color: #667eea; font-weight: bold;">جاري التسجيل...</div>
                 </div>
             </div>
         </div>
-    `);
 
-    // Create Vue 3 app
-    const { createApp, ref, computed, onMounted } = Vue;
+        <!-- Branch -->
+        <div class="pos-field-group">
+            <label>🏪 الفرع</label>
+            <select class="pos-select" v-model="selectedBranch" style="min-width:160px;">
+                <option v-for="b in branches" :value="b.name">{{ b.cost_center_name || b.name }}</option>
+            </select>
+        </div>
+
+        <!-- Price List -->
+        <div class="pos-field-group">
+            <label>💰 قائمة الأسعار</label>
+            <select class="pos-select" v-model="selectedPriceList" @change="onPriceListChange" style="min-width:160px;">
+                <option v-for="p in priceLists" :value="p.name">{{ p.name }}</option>
+            </select>
+        </div>
+
+        <!-- Seller -->
+        <div class="pos-field-group">
+            <label>👨‍💼 البائع</label>
+            <select class="pos-select" v-model="selectedSeller" @change="onSellerChange" style="min-width:150px;">
+                <option v-for="s in sellers" :value="s.name">{{ s.sales_person_name || s.name }}</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="pos-main-layout">
+        <!-- Products Column -->
+        <div class="pos-products-col">
+            <!-- Category Tabs -->
+            <div class="pos-categories">
+                <div class="pos-cat-tab" :class="{ active: selectedCategory === 'all' }" @click="setCategory('all')">🏷️ الكل</div>
+                <div
+                    class="pos-cat-tab"
+                    v-for="g in itemGroups"
+                    :key="g.name"
+                    :class="{ active: selectedCategory === g.name }"
+                    @click="setCategory(g.name)"
+                >{{ g.item_group_name || g.name }}</div>
+            </div>
+
+            <!-- Search -->
+            <div class="pos-search-wrap">
+                <span class="search-icon">🔍</span>
+                <input class="pos-input" v-model="searchQuery" @input="filterProducts" placeholder="ابحث بالصنف أو الكود...">
+            </div>
+
+            <!-- Products Grid -->
+            <div v-if="loadingProducts" style="text-align:center; padding:50px; color:var(--text-muted);">
+                <div class="pos-spinner" style="margin:0 auto 16px;"></div>
+                <p>جاري تحميل المنتجات...</p>
+            </div>
+            <div v-else-if="filteredProducts.length === 0" class="pos-empty">
+                <div class="icon">📦</div>
+                <p>لا توجد منتجات في هذه الفئة</p>
+            </div>
+            <div v-else class="pos-product-grid">
+                <div
+                    class="pos-product-card"
+                    v-for="product in filteredProducts"
+                    :key="product.item_code"
+                    @click="openModal(product)"
+                >
+                    <span class="product-emoji">{{ product.image && !product.image.startsWith('/') ? product.image : '📦' }}</span>
+                    <div class="product-name">{{ product.item_name }}</div>
+                    <div class="product-price">{{ (product.price || 0).toFixed(2) }} ج.م</div>
+                    <!-- Total stock badge -->
+                    <span class="product-stock-badge" :class="getStockClass(product)">{{ getStockText(product) }}</span>
+                    <!-- Warehouse breakdown -->
+                    <div class="product-wh-list" v-if="product.stock && product.stock.length">
+                        <div class="product-wh-row" v-for="wh in product.stock.filter(w => w.actual_qty > 0)" :key="wh.warehouse">
+                            <span>📦 {{ wh.warehouse_name }}</span>
+                            <span>{{ wh.actual_qty }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cart Column -->
+        <div class="pos-cart-col pos-card" style="padding:20px;">
+            <div class="pos-section-title">🛒 السلة ({{ cart.length }} صنف)</div>
+
+            <!-- Empty cart -->
+            <div v-if="cart.length === 0" class="pos-empty">
+                <div class="icon">🛒</div>
+                <p>السلة فارغة</p>
+            </div>
+
+            <!-- Cart Items -->
+            <div class="pos-cart" v-else>
+                <div class="pos-cart-item" v-for="(item, index) in cart" :key="index">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+                        <div>
+                            <div class="cart-item-name">{{ item.item_name }}</div>
+                            <div class="cart-item-wh">📦 {{ item.warehouse }}</div>
+                        </div>
+                        <button class="pos-btn-icon" @click="removeItem(index)">🗑️</button>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div class="cart-qty-ctrl">
+                            <button class="cart-qty-btn" @click="changeQty(index, -1)">−</button>
+                            <span class="cart-qty-num">{{ item.qty }}</span>
+                            <button class="cart-qty-btn" @click="changeQty(index, 1)">+</button>
+                        </div>
+                        <span class="cart-item-amount">{{ item.amount.toFixed(2) }} ج.م</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Totals -->
+            <div class="pos-totals" v-if="cart.length > 0">
+                <div class="pos-total-row"><span>المجموع:</span><span>{{ totalAmount.toFixed(2) }} ج.م</span></div>
+                <div class="pos-total-row" style="align-items:center;">
+                    <span>الخصم (ج.م):</span>
+                    <input class="pos-input" v-model.number="discount" type="number" min="0" style="width:90px; text-align:center; padding:6px 10px;">
+                </div>
+                <div class="pos-total-row grand">
+                    <span>الإجمالي:</span>
+                    <span>{{ grandTotal.toFixed(2) }} ج.م</span>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div style="margin-top:14px;">
+                <button class="pos-btn pos-btn-success" @click="registerOrder" :disabled="submitting">
+                    <span v-if="submitting">⏳ جاري التسجيل...</span>
+                    <span v-else>💾 تسجيل الطلب</span>
+                </button>
+                <button class="pos-btn pos-btn-danger" style="width:100%;justify-content:center;padding:10px;" @click="clearCart" v-if="cart.length > 0">❌ إفراغ السلة</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add to Cart Modal (Warehouse Selection) -->
+    <div class="pos-modal-overlay" v-if="showModal" @click.self="showModal = false">
+        <div class="pos-modal">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <div class="pos-modal-title">➕ إضافة صنف</div>
+                <button class="pos-btn pos-btn-ghost" @click="showModal = false" style="padding:6px 12px;">✕</button>
+            </div>
+            <div style="text-align:center; margin-bottom:18px;">
+                <div style="font-size:3rem;">{{ currentItem?.image && !currentItem.image.startsWith('/') ? currentItem.image : '📦' }}</div>
+                <div style="font-size:1rem; font-weight:800; color:var(--text-primary); margin-top:8px;">{{ currentItem?.item_name }}</div>
+                <div style="font-size:1.3rem; font-weight:900; background:var(--accent-grad); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;">{{ currentItem?.price?.toFixed(2) }} ج.م</div>
+            </div>
+
+            <div class="pos-section-title">اختر المخزن والكمية:</div>
+            <div class="pos-modal-wh-list">
+                <div
+                    class="pos-modal-wh-row"
+                    v-for="(wh, idx) in currentItem?.stock"
+                    :key="idx"
+                    :class="{ selected: selectedWh.includes(idx), disabled: wh.actual_qty <= 0 }"
+                    @click="wh.actual_qty > 0 && toggleWh(idx)"
+                >
+                    <input type="checkbox" :checked="selectedWh.includes(idx)" :disabled="wh.actual_qty <= 0" @click.stop style="accent-color:var(--accent-1);">
+                    <span class="pos-modal-wh-name">{{ wh.warehouse_name || wh.warehouse }}</span>
+                    <span class="pos-modal-wh-qty" :class="wh.actual_qty > 0 ? 'wh-qty-ok' : 'wh-qty-none'">
+                        {{ wh.actual_qty > 0 ? 'متوفر: ' + wh.actual_qty : 'غير متوفر' }}
+                    </span>
+                    <input
+                        v-if="selectedWh.includes(idx)"
+                        v-model.number="whQty[idx]"
+                        type="number" min="1" :max="wh.actual_qty"
+                        style="width:60px; background:var(--bg-glass); border:1px solid var(--border-glass); border-radius:6px; padding:4px 8px; color:var(--text-primary); text-align:center;"
+                        @click.stop
+                    >
+                </div>
+            </div>
+
+            <div style="text-align:center; margin:16px 0; background:var(--bg-glass); border-radius:var(--radius-sm); padding:10px; font-size:0.9rem; color:var(--text-muted);">
+                الإجمالي: <strong style="color:var(--text-primary);">{{ modalTotalQty }} × {{ currentItem?.price?.toFixed(2) }} = </strong>
+                <strong style="background:var(--accent-grad); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;">{{ modalTotal.toFixed(2) }} ج.م</strong>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <button class="pos-btn pos-btn-primary" style="flex:1; justify-content:center;" @click="addToCart">➕ أضف للسلة</button>
+                <button class="pos-btn pos-btn-danger" style="flex:1; justify-content:center;" @click="showModal = false">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Customer Modal -->
+    <div class="pos-modal-overlay" v-if="showCreateCustomer" @click.self="showCreateCustomer = false">
+        <div class="pos-modal">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <div class="pos-modal-title">👤 إضافة عميل جديد</div>
+                <button class="pos-btn pos-btn-ghost" @click="showCreateCustomer = false" style="padding:6px 12px;">✕</button>
+            </div>
+            <div class="pos-field-group" style="margin-bottom:14px;">
+                <label>اسم العميل *</label>
+                <input class="pos-input" v-model="newCustomerName" placeholder="أدخل اسم العميل...">
+            </div>
+            <div class="pos-field-group" style="margin-bottom:22px;">
+                <label>رقم الهاتف</label>
+                <input class="pos-input" v-model="newCustomerPhone" type="tel" placeholder="01xxxxxxxxx">
+            </div>
+            <div style="display:flex; gap:10px;">
+                <button class="pos-btn pos-btn-primary" style="flex:1; justify-content:center;" @click="submitCreateCustomer" :disabled="!newCustomerName || creatingCustomer">
+                    <span v-if="creatingCustomer">⏳ جاري الإنشاء...</span>
+                    <span v-else>✅ إنشاء العميل</span>
+                </button>
+                <button class="pos-btn pos-btn-ghost" style="flex:1; justify-content:center;" @click="showCreateCustomer = false">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="pos-toast" :class="toast.type" v-if="toast.show">{{ toast.message }}</div>
+
+    <!-- Loading Overlay -->
+    <div class="pos-loading-overlay" v-if="submitting">
+        <div class="pos-spinner"></div>
+        <div class="pos-loading-text">جاري تسجيل الطلب...</div>
+    </div>
+</div>
+    `;
 
     const app = createApp({
+        template: APP_TEMPLATE,
+        directives: {
+            'click-outside': {
+                mounted(el, binding) {
+                    el._clickOutside = (e) => { if (!el.contains(e.target)) binding.value(e); };
+                    document.addEventListener('click', el._clickOutside, true);
+                },
+                unmounted(el) { document.removeEventListener('click', el._clickOutside, true); }
+            }
+        },
         setup() {
-            const loading = ref(true);
+            // ---- State ----
+            const loadingProducts = ref(true);
+            const submitting = ref(false);
             const products = ref([]);
             const filteredProducts = ref([]);
+            const itemGroups = ref([]);
+            const selectedCategory = ref('all');
+            const searchQuery = ref('');
             const cart = ref([]);
-            const currentItem = ref(null);
+            const discount = ref(0);
+
+            // Customer search
+            const customerQuery = ref('');
+            const customerResults = ref([]);
+            const customerSearching = ref(false);
+            const showCustomerDropdown = ref(false);
+            const selectedCustomer = ref('');
+            const selectedCustomerName = ref('');
+            let customerSearchTimer = null;
+
+            // Create customer modal
+            const showCreateCustomer = ref(false);
+            const newCustomerName = ref('');
+            const newCustomerPhone = ref('');
+            const creatingCustomer = ref(false);
+
+            // Modal state
             const showModal = ref(false);
+            const currentItem = ref(null);
             const selectedWh = ref([]);
             const whQty = ref({});
-            const discount = ref(0);
-            const searchQuery = ref('');
-            const customerPhone = ref('');
-            const selectedCustomer = ref('');
-            const selectedBranch = ref('');
-            const selectedPriceList = ref('');
-            const selectedSeller = ref('');
-            const customers = ref([]);
+
+            // Lists
             const branches = ref([]);
             const priceLists = ref([]);
             const sellers = ref([]);
-            const sellerName = ref('البائع');
-            const branchName = ref('الفرع');
+            const selectedBranch = ref('');
+            const selectedPriceList = ref('');
+            const selectedSeller = ref('');
+            const sellerLabel = ref('البائع');
+            const branchLabel = ref('الفرع');
+
             const toast = ref({ show: false, message: '', type: 'success' });
 
-            const totalQty = computed(() => cart.value.reduce((s, i) => s + i.qty, 0));
+            // ---- Computed ----
             const totalAmount = computed(() => cart.value.reduce((s, i) => s + i.amount, 0));
-            const grandTotal = computed(() => totalAmount.value - discount.value);
-
-            const modalTotalQty = computed(() => {
-                return selectedWh.value.reduce((sum, idx) => sum + (whQty.value[idx] || 0), 0);
-            });
+            const grandTotal = computed(() => Math.max(0, totalAmount.value - (discount.value || 0)));
+            const modalTotalQty = computed(() => selectedWh.value.reduce((s, idx) => s + (whQty.value[idx] || 0), 0));
             const modalTotal = computed(() => modalTotalQty.value * (currentItem.value?.price || 0));
 
-            onMounted(() => {
-                loadInitialData();
-            });
+            // ---- Mount ----
+            onMounted(() => { loadInitialData(); });
 
+            // ---- Data Loading ----
             function loadInitialData() {
+                // Sellers
                 frappe.call({
                     method: 'frappe.client.get_list',
                     args: { doctype: 'Sales Person', fields: ['name', 'sales_person_name'], filters: { is_group: 0 } },
                     callback: (r) => {
-                        if (r.message) {
+                        if (r.message && r.message.length) {
                             sellers.value = r.message;
                             selectedSeller.value = r.message[0]?.name || '';
-                            sellerName.value = r.message[0]?.sales_person_name || r.message[0]?.name || 'البائع';
+                            sellerLabel.value = r.message[0]?.sales_person_name || r.message[0]?.name || 'البائع';
                         }
                     }
                 });
 
+                // Branches (Cost Centers)
                 frappe.call({
                     method: 'frappe.client.get_list',
-                    args: { doctype: 'Cost Center', fields: ['name', 'cost_center_name'] },
+                    args: { doctype: 'Cost Center', fields: ['name', 'cost_center_name'], filters: { is_group: 0 } },
                     callback: (r) => {
-                        if (r.message) {
+                        if (r.message && r.message.length) {
                             branches.value = r.message;
                             selectedBranch.value = r.message[0]?.name || '';
-                            branchName.value = r.message[0]?.cost_center_name || r.message[0]?.name || 'الفرع';
+                            branchLabel.value = r.message[0]?.cost_center_name || r.message[0]?.name || 'الفرع';
                         }
                     }
                 });
 
+                // Price Lists
                 frappe.call({
                     method: 'frappe.client.get_list',
                     args: { doctype: 'Price List', fields: ['name'], filters: { selling: 1, enabled: 1 } },
                     callback: (r) => {
-                        if (r.message) {
+                        if (r.message && r.message.length) {
                             priceLists.value = r.message;
                             selectedPriceList.value = r.message[0]?.name || '';
+                            loadItemGroups();
                             loadProducts();
                         }
                     }
                 });
+            }
 
+            function loadItemGroups() {
                 frappe.call({
-                    method: 'frappe.client.get_list',
-                    args: { doctype: 'Customer', fields: ['name', 'customer_name'], limit: 100 },
+                    method: 'custom_pos.custom_pos.api.api.get_item_groups',
                     callback: (r) => {
-                        if (r.message) customers.value = r.message;
+                        if (r.message) itemGroups.value = r.message;
                     }
                 });
             }
 
             function loadProducts() {
                 if (!selectedPriceList.value) return;
-                loading.value = true;
+                loadingProducts.value = true;
                 frappe.call({
                     method: 'custom_pos.custom_pos.api.api.get_all_items_with_prices',
                     args: { price_list: selectedPriceList.value },
                     callback: (r) => {
                         products.value = r.message || [];
-                        filteredProducts.value = products.value;
-                        loading.value = false;
+                        applyFilters();
+                        loadingProducts.value = false;
                     },
                     error: () => {
-                        loading.value = false;
+                        loadingProducts.value = false;
                         showToast('❌ خطأ في تحميل المنتجات', 'error');
                     }
                 });
             }
 
-            function onPriceListChange() {
-                loadProducts();
-                showToast('تم تغيير قائمة الأسعار', 'success');
+            // ---- Filters ----
+            function setCategory(cat) {
+                selectedCategory.value = cat;
+                applyFilters();
             }
 
-            function searchItems() {
-                if (!searchQuery.value) {
-                    filteredProducts.value = products.value;
+            function filterProducts() { applyFilters(); }
+
+            function applyFilters() {
+                let list = products.value;
+                if (selectedCategory.value !== 'all') {
+                    list = list.filter(p => p.item_group === selectedCategory.value);
+                }
+                if (searchQuery.value.trim()) {
+                    const q = searchQuery.value.trim().toLowerCase();
+                    list = list.filter(p =>
+                        (p.item_name || '').toLowerCase().includes(q) ||
+                        (p.item_code || '').toLowerCase().includes(q)
+                    );
+                }
+                filteredProducts.value = list;
+            }
+
+            // ---- Customer Combobox ----
+            function onCustomerInput() {
+                clearTimeout(customerSearchTimer);
+                if (customerQuery.value.length < 2) {
+                    customerResults.value = [];
                     return;
                 }
-                filteredProducts.value = products.value.filter(p => 
-                    p.item_name.includes(searchQuery.value) || p.item_code.includes(searchQuery.value)
-                );
+                customerSearching.value = true;
+                customerSearchTimer = setTimeout(() => {
+                    frappe.call({
+                        method: 'custom_pos.custom_pos.api.api.search_customer',
+                        args: { query: customerQuery.value },
+                        callback: (r) => {
+                            customerResults.value = r.message || [];
+                            customerSearching.value = false;
+                        },
+                        error: () => { customerSearching.value = false; }
+                    });
+                }, 350);
             }
 
+            function selectCustomer(c) {
+                selectedCustomer.value = c.name;
+                selectedCustomerName.value = c.customer_name;
+                showCustomerDropdown.value = false;
+                customerQuery.value = '';
+                customerResults.value = [];
+            }
+
+            function clearCustomer() {
+                selectedCustomer.value = '';
+                selectedCustomerName.value = '';
+                customerQuery.value = '';
+            }
+
+            function closeCustomerDropdown() {
+                showCustomerDropdown.value = false;
+            }
+
+            function openCreateCustomer() {
+                newCustomerName.value = customerQuery.value;
+                newCustomerPhone.value = '';
+                showCreateCustomer.value = true;
+                showCustomerDropdown.value = false;
+            }
+
+            function submitCreateCustomer() {
+                if (!newCustomerName.value) return;
+                creatingCustomer.value = true;
+                frappe.call({
+                    method: 'custom_pos.custom_pos.api.api.create_customer',
+                    args: { customer_name: newCustomerName.value, mobile_no: newCustomerPhone.value },
+                    callback: (r) => {
+                        creatingCustomer.value = false;
+                        if (r.message) {
+                            selectCustomer(r.message);
+                            showCreateCustomer.value = false;
+                            showToast('✅ تم إنشاء العميل: ' + r.message.customer_name, 'success');
+                        }
+                    },
+                    error: () => {
+                        creatingCustomer.value = false;
+                        showToast('❌ خطأ في إنشاء العميل', 'error');
+                    }
+                });
+            }
+
+            // ---- Modal (Warehouse Selection) ----
             function openModal(product) {
                 currentItem.value = product;
                 selectedWh.value = [];
@@ -320,31 +537,40 @@ function createVueApp(wrapper, main) {
                     whQty.value[idx] = 1;
                 } else {
                     selectedWh.value.splice(i, 1);
+                    delete whQty.value[idx];
                 }
             }
 
             function addToCart() {
                 if (!selectedWh.value.length) {
-                    showToast('⚠️ اختر مخزن على الأقل', 'warning');
+                    showToast('⚠️ اختر مخزن واحد على الأقل', 'warning');
                     return;
                 }
                 selectedWh.value.forEach(idx => {
                     const wh = currentItem.value.stock[idx];
                     const qty = whQty.value[idx] || 1;
-                    cart.value.push({
-                        item_code: currentItem.value.item_code,
-                        item_name: currentItem.value.item_name,
-                        emoji: currentItem.value.image || '📦',
-                        qty: qty,
-                        rate: currentItem.value.price,
-                        warehouse: wh.warehouse_name || wh.warehouse,
-                        amount: qty * currentItem.value.price
-                    });
+                    // Check if same item + warehouse already in cart
+                    const existing = cart.value.find(c => c.item_code === currentItem.value.item_code && c.warehouse === (wh.warehouse_name || wh.warehouse));
+                    if (existing) {
+                        existing.qty += qty;
+                        existing.amount = existing.qty * existing.rate;
+                    } else {
+                        cart.value.push({
+                            item_code: currentItem.value.item_code,
+                            item_name: currentItem.value.item_name,
+                            qty,
+                            rate: currentItem.value.price,
+                            warehouse: wh.warehouse_name || wh.warehouse,
+                            warehouse_id: wh.warehouse,
+                            amount: qty * currentItem.value.price
+                        });
+                    }
                 });
                 showModal.value = false;
                 showToast('✅ تمت الإضافة للسلة', 'success');
             }
 
+            // ---- Cart ----
             function changeQty(index, delta) {
                 cart.value[index].qty += delta;
                 if (cart.value[index].qty <= 0) {
@@ -354,38 +580,28 @@ function createVueApp(wrapper, main) {
                 }
             }
 
-            function removeItem(index) {
-                cart.value.splice(index, 1);
-            }
+            function removeItem(index) { cart.value.splice(index, 1); }
 
             function clearCart() {
                 if (!cart.value.length) return;
                 if (!confirm('هل تريد إفراغ السلة؟')) return;
                 cart.value = [];
+                discount.value = 0;
                 showToast('🗑️ تم إفراغ السلة', 'success');
             }
 
+            // ---- Register Order ----
             function registerOrder() {
-                if (!cart.value.length) {
-                    showToast('⚠️ السلة فارغة!', 'warning');
-                    return;
-                }
-                if (!selectedCustomer.value) {
-                    showToast('⚠️ اختر العميل!', 'warning');
-                    return;
-                }
-                if (!customerPhone.value) {
-                    showToast('⚠️ أدخل رقم التليفون!', 'warning');
-                    return;
-                }
-                loading.value = true;
+                if (!cart.value.length) { showToast('⚠️ السلة فارغة!', 'warning'); return; }
+                if (!selectedCustomer.value) { showToast('⚠️ اختر العميل أولاً!', 'warning'); return; }
+                submitting.value = true;
                 frappe.call({
                     method: 'custom_pos.custom_pos.api.api.register_pos_order',
                     args: {
                         data: {
                             seller: selectedSeller.value,
                             customer: selectedCustomer.value,
-                            customer_phone: customerPhone.value,
+                            customer_phone: '',
                             price_list: selectedPriceList.value,
                             branch: selectedBranch.value,
                             discount_amount: discount.value,
@@ -393,80 +609,72 @@ function createVueApp(wrapper, main) {
                                 item_code: i.item_code,
                                 qty: i.qty,
                                 rate: i.rate,
-                                warehouse: i.warehouse
+                                warehouse: i.warehouse_id || i.warehouse
                             }))
                         }
                     },
                     callback: (r) => {
-                        loading.value = false;
+                        submitting.value = false;
                         if (r.message) {
                             showToast('✅ تم التسجيل: ' + r.message.name, 'success');
                             cart.value = [];
                             discount.value = 0;
-                            customerPhone.value = '';
-                            selectedCustomer.value = '';
+                            clearCustomer();
                         } else {
                             showToast('❌ خطأ في التسجيل', 'error');
                         }
                     },
-                    error: () => {
-                        loading.value = false;
+                    error: (err) => {
+                        submitting.value = false;
                         showToast('❌ خطأ في التسجيل', 'error');
                     }
                 });
             }
 
-            function searchCustomer() {
-                if (!customerPhone.value) {
-                    showToast('⚠️ أدخل رقم التليفون', 'warning');
-                    return;
-                }
-                frappe.call({
-                    method: 'custom_pos.custom_pos.api.api.get_customer_by_phone',
-                    args: { phone: customerPhone.value },
-                    callback: (r) => {
-                        const customers_list = r.message || [];
-                        if (customers_list.length) {
-                            customers.value = customers_list;
-                            selectedCustomer.value = customers_list[0].name;
-                            showToast('✅ تم العثور على العميل', 'success');
-                        } else {
-                            showToast('❌ لا يوجد عميل بهذا الرقم', 'warning');
-                        }
-                    }
-                });
+            // ---- Helpers ----
+            function onPriceListChange() { loadProducts(); showToast('تم تغيير قائمة الأسعار', 'success'); }
+            function onSellerChange() {
+                const s = sellers.value.find(x => x.name === selectedSeller.value);
+                sellerLabel.value = s?.sales_person_name || s?.name || 'البائع';
             }
 
-            function getStockStyle(product) {
-                const totalStock = product.stock ? product.stock.reduce((sum, s) => sum + (s.actual_qty || 0), 0) : 0;
-                return totalStock === 0 ? 'color: #f44336;' : totalStock < 10 ? 'color: #ff9800;' : 'color: #4caf50;';
+            function getStockClass(product) {
+                const total = product.stock ? product.stock.reduce((s, w) => s + (w.actual_qty || 0), 0) : 0;
+                return total === 0 ? 'stock-none' : total < 10 ? 'stock-low' : 'stock-available';
             }
 
             function getStockText(product) {
-                const totalStock = product.stock ? product.stock.reduce((sum, s) => sum + (s.actual_qty || 0), 0) : 0;
-                return totalStock === 0 ? 'غير متوفر' : `متوفر: ${totalStock}`;
+                const total = product.stock ? product.stock.reduce((s, w) => s + (w.actual_qty || 0), 0) : 0;
+                return total === 0 ? '❌ نفذ' : total < 10 ? `⚠️ ${total}` : `✅ ${total}`;
             }
 
             function showToast(message, type = 'success') {
                 toast.value = { show: true, message, type };
-                setTimeout(() => toast.value.show = false, 3000);
+                setTimeout(() => toast.value.show = false, 3200);
             }
 
             return {
-                loading, products, filteredProducts, cart, currentItem, showModal,
-                selectedWh, whQty, discount, searchQuery, customerPhone,
-                selectedCustomer, selectedBranch, selectedPriceList, selectedSeller,
-                customers, branches, priceLists, sellers, sellerName, branchName,
-                toast, totalQty, totalAmount, grandTotal, modalTotalQty, modalTotal,
-                loadProducts, onPriceListChange, searchItems, openModal, toggleWh,
-                addToCart, changeQty, removeItem, clearCart, registerOrder,
-                searchCustomer, getStockStyle, getStockText
+                loadingProducts, submitting, products, filteredProducts,
+                itemGroups, selectedCategory, searchQuery,
+                cart, discount, totalAmount, grandTotal,
+                customerQuery, customerResults, customerSearching,
+                showCustomerDropdown, selectedCustomer, selectedCustomerName,
+                showCreateCustomer, newCustomerName, newCustomerPhone, creatingCustomer,
+                showModal, currentItem, selectedWh, whQty,
+                modalTotalQty, modalTotal,
+                branches, priceLists, sellers,
+                selectedBranch, selectedPriceList, selectedSeller,
+                sellerLabel, branchLabel, toast,
+                setCategory, filterProducts,
+                onCustomerInput, selectCustomer, clearCustomer, closeCustomerDropdown,
+                openCreateCustomer, submitCreateCustomer,
+                openModal, toggleWh, addToCart,
+                changeQty, removeItem, clearCart, registerOrder,
+                onPriceListChange, onSellerChange,
+                getStockClass, getStockText
             };
         }
     });
 
-    const appEl = main.find("#vue-pos-app")[0];
-    if (appEl) {
-        app.mount(appEl);
-    }
+    app.mount('#pos-root');
 }
