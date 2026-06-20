@@ -1,0 +1,19 @@
+/* Vue 3 POS Styles */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+#vue-pos-app {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+#vue-pos-app input:focus,
+#vue-pos-app select:focus {
+    outline: none;
+    border-color: #667eea !important;
+}
+
+#vue-pos-app button:hover {
+    opacity: 0.9;
+}
