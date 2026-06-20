@@ -37,29 +37,74 @@ def get_all_items_with_prices(price_list=None, category=None):
             filters["item_group"] = category
         
         items = frappe.get_all("Item", filters=filters, fields=["name", "item_name", "item_code", "item_group", "image"], limit=items_per_page)
-        result = []
         
+        if not items:
+            return []
+        
+        item_codes = [item.item_code for item in items]
+        
+        # Bulk fetch all prices
+        price_map = {}
+        if price_list:
+            prices = frappe.get_all(
+                "Item Price",
+                filters={"item_code": ["in", item_codes], "price_list": price_list, "selling": 1},
+                fields=["item_code", "price_list_rate"]
+            )
+            price_map = {p.item_code: p.price_list_rate for p in prices}
+        
+        # Bulk fetch all stock
+        stock_list = frappe.get_all(
+            "Bin",
+            filters={"item_code": ["in", item_codes]},
+            fields=["item_code", "warehouse", "actual_qty"]
+        )
+        
+        # Bulk fetch warehouse names
+        warehouse_map = {}
+        if stock_list:
+            warehouse_codes = list(set([s.warehouse for s in stock_list]))
+            warehouses = frappe.get_all(
+                "Warehouse",
+                filters={"name": ["in", warehouse_codes]},
+                fields=["name", "warehouse_name"]
+            )
+            warehouse_map = {w.name: w.warehouse_name or w.name for w in warehouses}
+        
+        # Build stock map
+        stock_map = {}
+        total_stock_map = {}
+        for s in stock_list:
+            if s.item_code not in stock_map:
+                stock_map[s.item_code] = []
+                total_stock_map[s.item_code] = 0
+            wh_name = warehouse_map.get(s.warehouse, s.warehouse)
+            stock_map[s.item_code].append({
+                "warehouse": s.warehouse,
+                "warehouse_name": wh_name,
+                "actual_qty": s.actual_qty
+            })
+            total_stock_map[s.item_code] += s.actual_qty
+        
+        # Build result
+        result = []
         for item in items:
-            price = 0
-            if price_list:
-                price_data = frappe.get_all("Item Price", filters={"item_code": item.item_code, "price_list": price_list, "selling": 1}, fields=["price_list_rate"], limit=1)
-                if price_data: 
-                    price = price_data[0].price_list_rate
-            
-            stock = frappe.get_all("Bin", filters={"item_code": item.item_code}, fields=["warehouse", "actual_qty"])
-            stock_with_names = []
-            total_stock = 0
-            
-            for s in stock:
-                wh_name = frappe.get_value("Warehouse", s.warehouse, "warehouse_name") or s.warehouse
-                stock_with_names.append({"warehouse": s.warehouse, "warehouse_name": wh_name, "actual_qty": s.actual_qty})
-                total_stock += s.actual_qty
+            price = price_map.get(item.item_code, 0)
+            stock = stock_map.get(item.item_code, [])
+            total_stock = total_stock_map.get(item.item_code, 0)
             
             # Skip if show_only_in_stock is enabled and total_stock <= 0
             if show_only_in_stock and total_stock <= 0:
                 continue
                 
-            result.append({"item_code": item.item_code, "item_name": item.item_name, "item_group": item.item_group, "image": item.image, "price": price, "stock": stock_with_names})
+            result.append({
+                "item_code": item.item_code,
+                "item_name": item.item_name,
+                "item_group": item.item_group,
+                "image": item.image,
+                "price": price,
+                "stock": stock
+            })
         
         return result
     except Exception as e:
@@ -140,6 +185,27 @@ def register_pos_order(data):
     try:
         check_pos_permission()
         
+        # First validate stock for all items
+        items = data.get("items", [])
+        for item in items:
+            item_code = item["item_code"]
+            warehouse = item["warehouse"]
+            qty = flt(item["qty"])
+            
+            # Get stock in selected warehouse
+            bin = frappe.db.get_value(
+                "Bin",
+                {"item_code": item_code, "warehouse": warehouse},
+                "actual_qty"
+            )
+            
+            actual_qty = flt(bin) if bin else 0
+            
+            if actual_qty < qty:
+                frappe.throw(_("المنتج {0} غير متوفّر في المخزن {1} بالكمية المطلوبة (المتوفّر: {2}, المطلوب: {3})").format(
+                    item_code, warehouse, actual_qty, qty
+                ))
+        
         # 1. Create and insert POS Order
         pos_order = frappe.get_doc({
             "doctype": "POS Order",
@@ -152,7 +218,7 @@ def register_pos_order(data):
             "status": "Draft",
             "items": []
         })
-        for item in data.get("items", []):
+        for item in items:
             pos_order.append("items", {
                 "item_code": item["item_code"],
                 "qty": item["qty"],
@@ -180,7 +246,7 @@ def register_pos_order(data):
         si.posting_date = frappe.utils.today()
         si.due_date = frappe.utils.today()
 
-        for item in data.get("items", []):
+        for item in items:
             si.append("items", {
                 "item_code": item["item_code"],
                 "qty": item["qty"],
