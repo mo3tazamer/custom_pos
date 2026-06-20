@@ -1,6 +1,5 @@
 // ============================================
 // Custom POS v2 - Modern Glassmorphic Design
-// Categories | Warehouse Display | Customer Search & Create
 // ============================================
 
 frappe.provide("custom_pos");
@@ -42,16 +41,13 @@ function createVuePOSApp(main) {
 
     <!-- Info Bar -->
     <div class="pos-card pos-infobar">
-        <!-- Customer Unified Search -->
-        <div class="pos-field-group" style="flex:1; min-width:240px;">
+        <div class="pos-field-group" style="flex:1; min-width:200px;">
             <label>👤 العميل</label>
             <div class="pos-customer-box" v-click-outside="closeCustomerDropdown">
-                <!-- Show selected customer -->
                 <div v-if="selectedCustomer" class="pos-customer-selected" @click="clearCustomer">
                     <span class="pos-customer-tag">👤 {{ selectedCustomerName }}</span>
-                    <span class="pos-customer-clear" title="تغيير">✕</span>
+                    <span class="pos-customer-clear">✕</span>
                 </div>
-                <!-- Search input -->
                 <div v-else style="position:relative;">
                     <input
                         class="pos-input"
@@ -61,7 +57,6 @@ function createVuePOSApp(main) {
                         placeholder="🔍 ابحث بالاسم أو التليفون..."
                         autocomplete="off"
                     >
-                    <!-- Dropdown -->
                     <div class="pos-customer-dropdown" v-if="showCustomerDropdown && (customerResults.length > 0 || customerQuery.length >= 2)">
                         <div v-if="customerSearching" style="padding:12px 14px; color:var(--text-muted); font-size:0.84rem;">⏳ جاري البحث...</div>
                         <template v-else>
@@ -77,33 +72,29 @@ function createVuePOSApp(main) {
                             <div v-if="!customerResults.length && customerQuery.length >= 2" class="pos-customer-create-btn" @click="openCreateCustomer">
                                 ➕ إنشاء عميل جديد "{{ customerQuery }}"
                             </div>
-                            <div v-if="!customerResults.length && customerQuery.length < 2" style="padding:10px 14px; color:var(--text-muted); font-size:0.8rem;">اكتب للبحث...</div>
                         </template>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Branch -->
         <div class="pos-field-group">
             <label>🏪 الفرع</label>
-            <select class="pos-select" v-model="selectedBranch" style="min-width:160px;">
+            <select class="pos-select" v-model="selectedBranch" style="min-width:140px;">
                 <option v-for="b in branches" :value="b.name">{{ b.cost_center_name || b.name }}</option>
             </select>
         </div>
 
-        <!-- Price List -->
         <div class="pos-field-group">
             <label>💰 قائمة الأسعار</label>
             <select class="pos-select" v-model="selectedPriceList" @change="onPriceListChange" style="min-width:160px;">
-                <option v-for="p in priceLists" :value="p.name">{{ p.name }}</option>
+                <option v-for="pl in allowedPriceLists" :value="pl">{{ pl }}</option>
             </select>
         </div>
 
-        <!-- Seller -->
         <div class="pos-field-group">
             <label>👨‍💼 البائع</label>
-            <select class="pos-select" v-model="selectedSeller" @change="onSellerChange" style="min-width:150px;">
+            <select class="pos-select" v-model="selectedSeller" @change="onSellerChange" style="min-width:140px;">
                 <option v-for="s in sellers" :value="s.name">{{ s.sales_person_name || s.name }}</option>
             </select>
         </div>
@@ -150,40 +141,33 @@ function createVuePOSApp(main) {
                     <span class="product-emoji">{{ product.image && !product.image.startsWith('/') ? product.image : '📦' }}</span>
                     <div class="product-name">{{ product.item_name }}</div>
                     <div class="product-price">{{ (product.price || 0).toFixed(2) }} ج.م</div>
-                    <!-- Total stock badge -->
                     <span class="product-stock-badge" :class="getStockClass(product)">{{ getStockText(product) }}</span>
-                    <!-- Warehouse breakdown -->
-                    <div class="product-wh-list" v-if="product.stock && product.stock.length">
-                        <div class="product-wh-row" v-for="wh in product.stock.filter(w => w.actual_qty > 0)" :key="wh.warehouse">
-                            <span>📦 {{ wh.warehouse_name }}</span>
-                            <span>{{ wh.actual_qty }}</span>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Cart Column -->
-        <div class="pos-cart-col pos-card" style="padding:20px;">
-            <div class="pos-section-title">🛒 السلة ({{ cart.length }} صنف)</div>
-
-            <!-- Empty cart -->
+        <div class="pos-cart-col pos-card">
+            <div class="pos-cart-header">
+                <div class="pos-section-title">🛒 السلة ({{ cart.length }})</div>
+                <button v-if="cart.length > 0" class="pos-btn-icon" @click="clearCart" title="تفريغ السلة">🗑️</button>
+            </div>
+            
             <div v-if="cart.length === 0" class="pos-empty">
                 <div class="icon">🛒</div>
                 <p>السلة فارغة</p>
             </div>
 
-            <!-- Cart Items -->
             <div class="pos-cart" v-else>
                 <div class="pos-cart-item" v-for="(item, index) in cart" :key="index">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
-                        <div>
+                    <div class="cart-item-top">
+                        <div class="cart-item-info">
                             <div class="cart-item-name">{{ item.item_name }}</div>
                             <div class="cart-item-wh">📦 {{ item.warehouse }}</div>
                         </div>
                         <button class="pos-btn-icon" @click="removeItem(index)">🗑️</button>
                     </div>
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div class="cart-item-bottom">
                         <div class="cart-qty-ctrl">
                             <button class="cart-qty-btn" @click="changeQty(index, -1)">−</button>
                             <span class="cart-qty-num">{{ item.qty }}</span>
@@ -194,31 +178,29 @@ function createVuePOSApp(main) {
                 </div>
             </div>
 
-            <!-- Totals -->
-            <div class="pos-totals" v-if="cart.length > 0">
-                <div class="pos-total-row"><span>المجموع:</span><span>{{ totalAmount.toFixed(2) }} ج.م</span></div>
+            <!-- Cart Totals (Sticky) -->
+            <div class="pos-cart-totals" v-if="cart.length > 0">
+                <div class="pos-total-row">
+                    <span>المجموع:</span>
+                    <span>{{ totalAmount.toFixed(2) }} ج.م</span>
+                </div>
                 <div class="pos-total-row" style="align-items:center;">
                     <span>الخصم (ج.م):</span>
-                    <input class="pos-input" v-model.number="discount" type="number" min="0" style="width:90px; text-align:center; padding:6px 10px;">
+                    <input class="pos-input" v-model.number="discount" type="number" min="0" style="width:80px; text-align:center; padding:5px 8px;">
                 </div>
                 <div class="pos-total-row grand">
                     <span>الإجمالي:</span>
                     <span>{{ grandTotal.toFixed(2) }} ج.م</span>
                 </div>
-            </div>
-
-            <!-- Actions -->
-            <div style="margin-top:14px;">
-                <button class="pos-btn pos-btn-success" @click="registerOrder" :disabled="submitting">
+                <button class="pos-btn pos-btn-success" @click="registerOrder" :disabled="submitting" style="margin-top:12px;">
                     <span v-if="submitting">⏳ جاري التسجيل...</span>
                     <span v-else>💾 تسجيل الطلب</span>
                 </button>
-                <button class="pos-btn pos-btn-danger" style="width:100%;justify-content:center;padding:10px;" @click="clearCart" v-if="cart.length > 0">❌ إفراغ السلة</button>
             </div>
         </div>
     </div>
 
-    <!-- Add to Cart Modal (Warehouse Selection) -->
+    <!-- Add to Cart Modal -->
     <div class="pos-modal-overlay" v-if="showModal" @click.self="showModal = false">
         <div class="pos-modal">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
@@ -230,7 +212,6 @@ function createVuePOSApp(main) {
                 <div style="font-size:1rem; font-weight:800; color:var(--text-primary); margin-top:8px;">{{ currentItem?.item_name }}</div>
                 <div style="font-size:1.3rem; font-weight:900; background:var(--accent-grad); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;">{{ currentItem?.price?.toFixed(2) }} ج.م</div>
                 
-                <!-- Show All Prices -->
                 <div style="margin-top:16px; text-align:right;">
                     <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:8px;">💵 جميع الأسعار:</div>
                     <div style="display:flex; flex-direction:column; gap:4px;">
@@ -241,14 +222,13 @@ function createVuePOSApp(main) {
                     </div>
                 </div>
                 
-                <!-- Show Cost Price if Authorized -->
                 <div v-if="currentItem?.can_see_cost_price && currentItem?.cost_price" style="margin-top:12px; padding:8px; background:rgba(239, 68, 68, 0.1); border:1px solid rgba(239, 68, 68, 0.3); border-radius:8px; color:var(--danger);">
                     <div style="font-size:0.8rem; font-weight:700;">💰 سعر الشراء:</div>
                     <div style="font-size:1.1rem; font-weight:900;">{{ currentItem.cost_price.toFixed(2) }} ج.م</div>
                 </div>
             </div>
 
-            <div class="pos-section-title">اختر المخزون والكمية:</div>
+            <div class="pos-section-title">اختر المخزن والكمية:</div>
             <div class="pos-modal-wh-list">
                 <div
                     class="pos-modal-wh-row"
@@ -331,7 +311,7 @@ function createVuePOSApp(main) {
             }
         },
         setup() {
-            // ---- State ----
+            // State
             const loadingProducts = ref(true);
             const submitting = ref(false);
             const products = ref([]);
@@ -342,7 +322,8 @@ function createVuePOSApp(main) {
             const cart = ref([]);
             const discount = ref(0);
             const isLightTheme = ref(localStorage.getItem('posTheme') === 'light');
-
+            const allowedPriceLists = ref([]);
+            
             // Customer search
             const customerQuery = ref('');
             const customerResults = ref([]);
@@ -376,16 +357,16 @@ function createVuePOSApp(main) {
 
             const toast = ref({ show: false, message: '', type: 'success' });
 
-            // ---- Computed ----
+            // Computed
             const totalAmount = computed(() => cart.value.reduce((s, i) => s + i.amount, 0));
             const grandTotal = computed(() => Math.max(0, totalAmount.value - (discount.value || 0)));
             const modalTotalQty = computed(() => selectedWh.value.reduce((s, idx) => s + (whQty.value[idx] || 0), 0));
             const modalTotal = computed(() => modalTotalQty.value * (currentItem.value?.price || 0));
 
-            // ---- Mount ----
+            // Mount
             onMounted(() => { loadInitialData(); });
 
-            // ---- Data Loading ----
+            // Data Loading
             function loadInitialData() {
                 // Sellers
                 frappe.call({
@@ -413,14 +394,17 @@ function createVuePOSApp(main) {
                     }
                 });
 
-                // Price Lists
+                // Load POS Settings and Price Lists
                 frappe.call({
-                    method: 'frappe.client.get_list',
-                    args: { doctype: 'Price List', fields: ['name'], filters: { selling: 1, enabled: 1 } },
+                    method: 'custom_pos.custom_pos.api.api.get_pos_settings',
                     callback: (r) => {
-                        if (r.message && r.message.length) {
-                            priceLists.value = r.message;
-                            selectedPriceList.value = r.message[0]?.name || '';
+                        if (r.message) {
+                            allowedPriceLists.value = r.message.allowed_price_lists;
+                            if (r.message.default_price_list && allowedPriceLists.value.includes(r.message.default_price_list)) {
+                                selectedPriceList.value = r.message.default_price_list;
+                            } else if (allowedPriceLists.value.length > 0) {
+                                selectedPriceList.value = allowedPriceLists.value[0];
+                            }
                             loadItemGroups();
                             loadProducts();
                         }
@@ -455,7 +439,7 @@ function createVuePOSApp(main) {
                 });
             }
 
-            // ---- Filters ----
+            // Filters
             function setCategory(cat) {
                 selectedCategory.value = cat;
                 applyFilters();
@@ -478,7 +462,7 @@ function createVuePOSApp(main) {
                 filteredProducts.value = list;
             }
 
-            // ---- Customer Combobox ----
+            // Customer Combobox
             function onCustomerInput() {
                 clearTimeout(customerSearchTimer);
                 if (customerQuery.value.length < 2) {
@@ -545,7 +529,7 @@ function createVuePOSApp(main) {
                 });
             }
 
-            // ---- Modal (Warehouse Selection) ----
+            // Modal (Warehouse Selection)
             function openModal(product) {
                 currentItem.value = product;
                 selectedWh.value = [];
@@ -572,7 +556,6 @@ function createVuePOSApp(main) {
                 selectedWh.value.forEach(idx => {
                     const wh = currentItem.value.stock[idx];
                     const qty = whQty.value[idx] || 1;
-                    // Check if same item + warehouse already in cart
                     const existing = cart.value.find(c => c.item_code === currentItem.value.item_code && c.warehouse === (wh.warehouse_name || wh.warehouse));
                     if (existing) {
                         existing.qty += qty;
@@ -593,7 +576,7 @@ function createVuePOSApp(main) {
                 showToast('✅ تمت الإضافة للسلة', 'success');
             }
 
-            // ---- Cart ----
+            // Cart
             function changeQty(index, delta) {
                 cart.value[index].qty += delta;
                 if (cart.value[index].qty <= 0) {
@@ -613,7 +596,7 @@ function createVuePOSApp(main) {
                 showToast('🗑️ تم إفراغ السلة', 'success');
             }
 
-            // ---- Register Order ----
+            // Register Order
             function registerOrder() {
                 if (!cart.value.length) { showToast('⚠️ السلة فارغة!', 'warning'); return; }
                 if (!selectedCustomer.value) { showToast('⚠️ اختر العميل أولاً!', 'warning'); return; }
@@ -654,7 +637,7 @@ function createVuePOSApp(main) {
                 });
             }
 
-            // ---- Helpers ----
+            // Helpers
             function toggleTheme() {
                 isLightTheme.value = !isLightTheme.value;
                 localStorage.setItem('posTheme', isLightTheme.value ? 'light' : 'dark');
@@ -694,6 +677,7 @@ function createVuePOSApp(main) {
                 selectedBranch, selectedPriceList, selectedSeller,
                 sellerLabel, branchLabel, toast,
                 isLightTheme, toggleTheme,
+                allowedPriceLists,
                 setCategory, filterProducts,
                 onCustomerInput, selectCustomer, clearCustomer, closeCustomerDropdown,
                 openCreateCustomer, submitCreateCustomer,

@@ -2,6 +2,30 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
+
+@frappe.whitelist()
+def get_pos_settings():
+    check_pos_permission()
+    pos_settings = frappe.get_single("POS Settings")
+    allowed_price_lists = []
+    
+    if pos_settings.allowed_price_lists:
+        allowed_price_lists = [pl.price_list for pl in pos_settings.allowed_price_lists]
+    else:
+        # If no allowed price lists set, return all enabled selling price lists
+        all_price_lists = frappe.get_all("Price List", 
+            filters={"selling": 1, "enabled": 1}, 
+            fields=["name"])
+        allowed_price_lists = [pl.name for pl in all_price_lists]
+    
+    return {
+        "show_only_in_stock": pos_settings.show_only_in_stock or 0,
+        "items_per_page": pos_settings.items_per_page or 500,
+        "default_price_list": pos_settings.default_price_list,
+        "allowed_price_lists": allowed_price_lists,
+        "can_see_cost_price": check_cost_price_permission()
+    }
+
 def check_pos_permission():
     """Check if current user has permission to access POS"""
     if frappe.session.user == "Administrator":
