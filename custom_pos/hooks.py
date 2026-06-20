@@ -15,7 +15,7 @@ app_include_css = [
 
 doc_events = {
     "POS Order": {
-        "on_submit": "custom_pos.doctype.pos_order.pos_order.on_submit",
-        "on_cancel": "custom_pos.doctype.pos_order.pos_order.on_cancel",
+        "on_submit": "custom_pos.custom_pos.doctype.pos_order.pos_order.on_submit",
+        "on_cancel": "custom_pos.custom_pos.doctype.pos_order.pos_order.on_cancel",
     }
 }
