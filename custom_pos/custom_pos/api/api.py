@@ -19,7 +19,9 @@ def get_pos_settings():
         "items_per_page": pos_settings.items_per_page or 500,
         "default_price_list": pos_settings.default_price_list,
         "allowed_price_lists": allowed_price_lists,
-        "can_see_cost_price": check_cost_price_permission()
+        "can_see_cost_price": check_cost_price_permission(),
+        "enable_vat": pos_settings.enable_vat or 1,
+        "vat_rate": pos_settings.vat_rate or 14
     }
 
 def check_pos_permission():

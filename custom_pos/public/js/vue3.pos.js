@@ -188,6 +188,10 @@ function createVuePOSApp(main) {
                     <span>الخصم (ج.م):</span>
                     <input class="pos-input" v-model.number="discount" type="number" min="0" style="width:80px; text-align:center; padding:5px 8px;">
                 </div>
+                <div class="pos-total-row" v-if="enableVat">
+                    <span>ضريبة القيمة المضافة ({{ vatRate }}%):</span>
+                    <span>{{ vatAmount.toFixed(2) }} ج.م</span>
+                </div>
                 <div class="pos-total-row grand">
                     <span>الإجمالي:</span>
                     <span>{{ grandTotal.toFixed(2) }} ج.م</span>
@@ -329,6 +333,8 @@ function createVuePOSApp(main) {
             const discount = ref(0);
             const isLightTheme = ref(localStorage.getItem('posTheme') === 'light');
             const allowedPriceLists = ref([]);
+            const enableVat = ref(true);
+            const vatRate = ref(14);
             
             // Customer search
             const customerQuery = ref('');
@@ -367,7 +373,8 @@ function createVuePOSApp(main) {
 
             // Computed
             const totalAmount = computed(() => cart.value.reduce((s, i) => s + i.amount, 0));
-            const grandTotal = computed(() => Math.max(0, totalAmount.value - (discount.value || 0)));
+            const vatAmount = computed(() => enableVat.value ? (totalAmount.value - (discount.value || 0)) * (vatRate.value / 100) : 0);
+            const grandTotal = computed(() => Math.max(0, (totalAmount.value - (discount.value || 0)) + vatAmount.value));
             const modalTotalQty = computed(() => selectedWh.value.reduce((s, idx) => s + (whQty.value[idx] || 0), 0));
             const modalTotal = computed(() => modalTotalQty.value * (currentItem.value?.price || 0));
 
@@ -419,6 +426,8 @@ function createVuePOSApp(main) {
                     callback: (r) => {
                         if (r.message) {
                             allowedPriceLists.value = r.message.allowed_price_lists;
+                            enableVat.value = r.message.enable_vat;
+                            vatRate.value = r.message.vat_rate;
                             if (r.message.default_price_list && allowedPriceLists.value.includes(r.message.default_price_list)) {
                                 selectedPriceList.value = r.message.default_price_list;
                             } else if (allowedPriceLists.value.length > 0) {
@@ -686,7 +695,7 @@ function createVuePOSApp(main) {
             return {
                 loadingProducts, submitting, products, filteredProducts,
                 itemGroups, selectedCategory, searchQuery,
-                cart, discount, totalAmount, grandTotal,
+                cart, discount, totalAmount, vatAmount, grandTotal, enableVat, vatRate,
                 customerQuery, customerResults, customerSearching,
                 showCustomerDropdown, selectedCustomer, selectedCustomerName,
                 showCreateCustomer, newCustomerName, newCustomerPhone, newCustomerGroup, customerGroups, creatingCustomer,
