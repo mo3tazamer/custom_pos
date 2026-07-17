@@ -1,7 +1,18 @@
 /* ============================================
-   Custom POS - ERPNext Original Style
+   Custom POS - ERPNext Original Style (Single Page)
    ============================================ */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ---- Full-Screen POS Mode (applied to body/page by page JS) ---- */
+body.pos-fullscreen-mode {
+    overflow: hidden !important;
+}
+body.pos-fullscreen-mode .page-container {
+    overflow: hidden !important;
+}
+.pos-page-container {
+    overflow: hidden !important;
+}
 
 /* ---- Keyframe Animations ---- */
 @keyframes spin {
@@ -34,6 +45,7 @@
     --gray-600:      #868e96;
     --gray-700:      #495057;
     --gray-800:      #343a40;
+    --navbar-h:      48px;  /* ERPNext top navbar height */
     --gray-900:      #212529;
     --red:           #E03636;
     --red-light:     #fde8e8;
@@ -66,7 +78,12 @@
 
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     direction: rtl;
-    min-height: 100vh;
+    /* Single-page: fill exactly the viewport below ERPNext navbar */
+    height: calc(100vh - var(--navbar-h));
+    max-height: calc(100vh - var(--navbar-h));
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     background: var(--bg-main);
     color: var(--text-primary);
     font-size: 14px;
@@ -80,11 +97,13 @@
 /* ============================================
    TOP TOOLBAR (ERPNext POS Header Bar)
    ============================================ */
+/* ---- TOP TOOLBAR (ERPNext POS Header Bar) ---- */
 .pos-toolbar {
     background: var(--bg-toolbar);
     border-bottom: 1px solid var(--border);
     padding: 0 16px;
     height: 52px;
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -145,7 +164,8 @@
    ============================================ */
 .pos-body {
     display: flex;
-    height: calc(100vh - 52px);
+    flex: 1;          /* fill remaining height inside #pos-root flex column */
+    min-height: 0;    /* critical: allows flex children to shrink below content size */
     overflow: hidden;
 }
 
