@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 import frappe
 from frappe import _
 from frappe.utils import flt
@@ -65,7 +66,7 @@ def get_all_items_with_prices(price_list=None, category=None):
         if category and category != "all":
             filters["item_group"] = category
         
-        items = frappe.get_all("Item", filters=filters, fields=["name", "item_name", "item_code", "item_group", "image", "valuation_rate"], limit=items_per_page)
+        items = frappe.get_all("Item", filters=filters, fields=["name", "item_name", "item_code", "item_group", "image", "standard_rate"], limit=items_per_page)
         
         if not items:
             return []
@@ -97,7 +98,7 @@ def get_all_items_with_prices(price_list=None, category=None):
         stock_list = frappe.get_all(
             "Bin",
             filters={"item_code": ["in", item_codes]},
-            fields=["item_code", "warehouse", "actual_qty"]
+            fields=["item_code", "warehouse", "actual_qty", "valuation_rate"]
         )
         
         # Bulk fetch warehouse names
@@ -111,9 +112,10 @@ def get_all_items_with_prices(price_list=None, category=None):
             )
             warehouse_map = {w.name: w.warehouse_name or w.name for w in warehouses}
         
-        # Build stock map
+        # Build stock map and valuation rate map
         stock_map = {}
         total_stock_map = {}
+        item_valuation_map = {}
         for s in stock_list:
             if s.item_code not in stock_map:
                 stock_map[s.item_code] = []
@@ -125,6 +127,9 @@ def get_all_items_with_prices(price_list=None, category=None):
                 "actual_qty": s.actual_qty
             })
             total_stock_map[s.item_code] += s.actual_qty
+            val_rate = flt(s.get("valuation_rate", 0))
+            if val_rate > 0 or s.item_code not in item_valuation_map:
+                item_valuation_map[s.item_code] = val_rate
         
         # Build result
         result = []
@@ -137,6 +142,8 @@ def get_all_items_with_prices(price_list=None, category=None):
             # Skip if show_only_in_stock is enabled and total_stock <= 0
             if show_only_in_stock and total_stock <= 0:
                 continue
+            
+            cost_price = item_valuation_map.get(item.item_code) or flt(item.get("standard_rate", 0))
                 
             result.append({
                 "item_code": item.item_code,
@@ -145,7 +152,7 @@ def get_all_items_with_prices(price_list=None, category=None):
                 "image": item.image,
                 "price": price,
                 "all_prices": all_prices_for_item,
-                "cost_price": item.valuation_rate if can_see_cost_price else None,
+                "cost_price": cost_price if can_see_cost_price else None,
                 "can_see_cost_price": can_see_cost_price,
                 "stock": stock
             })
@@ -159,9 +166,13 @@ def get_all_items_with_prices(price_list=None, category=None):
 def get_item_groups():
     try:
         check_pos_permission()
+        # Check if item_group_name column exists
+        has_item_group_name = frappe.db.has_column("Item Group", "item_group_name")
+        item_group_field = "ig.item_group_name" if has_item_group_name else "ig.name AS item_group_name"
+        
         # Get item groups that actually have active sales items
-        groups = frappe.db.sql("""
-            SELECT DISTINCT ig.name, ig.item_group_name
+        groups = frappe.db.sql(f"""
+            SELECT DISTINCT ig.name, {item_group_field}
             FROM `tabItem Group` ig
             INNER JOIN `tabItem` i ON i.item_group = ig.name
             WHERE i.disabled = 0 AND i.is_sales_item = 1
@@ -187,17 +198,26 @@ def search_customer(query):
         check_pos_permission()
         if not query or len(query) < 2:
             return []
-        results = frappe.db.sql("""
+            
+        where_conds = [
+            "customer_name LIKE %(q)s",
+            "mobile_no LIKE %(q)s",
+            "name LIKE %(q)s"
+        ]
+        if frappe.db.has_column("Customer", "party_cd"):
+            where_conds.append("party_cd LIKE %(q)s")
+        if frappe.db.has_column("Customer", "tax_id"):
+            where_conds.append("tax_id LIKE %(q)s")
+            
+        query_str = f"""
             SELECT name, customer_name, mobile_no, customer_group
             FROM `tabCustomer`
             WHERE disabled = 0 AND (
-                customer_name LIKE %(q)s OR
-                mobile_no LIKE %(q)s OR
-                name LIKE %(q)s OR
-                party_cd LIKE %(q)s
+                {" OR ".join(where_conds)}
             )
             LIMIT 20
-        """, {"q": f"%{query}%"}, as_dict=True)
+        """
+        results = frappe.db.sql(query_str, {"q": f"%{query}%"}, as_dict=True)
         return results
     except Exception as e:
         frappe.log_error(f"Error in search_customer: {str(e)}")
@@ -207,7 +227,16 @@ def search_customer(query):
 def get_customer_groups():
     try:
         check_pos_permission()
-        groups = frappe.get_all("Customer Group", filters={"is_group": 0}, fields=["name", "customer_group_name"])
+        fields = ["name"]
+        if frappe.db.has_column("Customer Group", "customer_group_name"):
+            fields.append("customer_group_name")
+            
+        groups = frappe.get_all("Customer Group", filters={"is_group": 0}, fields=fields)
+        
+        # Ensure 'customer_group_name' key is present in returned dictionaries
+        for g in groups:
+            if "customer_group_name" not in g:
+                g["customer_group_name"] = g["name"]
         return groups
     except Exception as e:
         frappe.log_error(f"Error in get_customer_groups: {str(e)}")
@@ -245,27 +274,6 @@ def register_pos_order(data):
         if isinstance(data, str):
             data = frappe.parse_json(data)
         
-        # First validate stock for all items
-        items = data.get("items", [])
-        for item in items:
-            item_code = item["item_code"]
-            warehouse = item["warehouse"]
-            qty = flt(item["qty"])
-            
-            # Get stock in selected warehouse
-            bin = frappe.db.get_value(
-                "Bin",
-                {"item_code": item_code, "warehouse": warehouse},
-                "actual_qty"
-            )
-            
-            actual_qty = flt(bin) if bin else 0
-            
-            if actual_qty < qty:
-                frappe.throw(_("المنتج {0} غير متوفّر في المخزن {1} بالكمية المطلوبة (المتوفّر: {2}, المطلوب: {3})").format(
-                    item_code, warehouse, actual_qty, qty
-                ))
-        
         # Get company from cost center or defaults
         company = None
         if data.get("branch"):
@@ -273,31 +281,63 @@ def register_pos_order(data):
         if not company:
             company = frappe.db.get_single_value('Global Defaults', 'default_company')
 
-        # 1. Create Sales Order
-        sales_order = frappe.new_doc("Sales Order")
-        sales_order.customer = data.get("customer")
-        sales_order.company = company
-        sales_order.selling_price_list = data.get("price_list")
-        sales_order.cost_center = data.get("branch")
-        sales_order.posting_date = frappe.utils.today()
-        sales_order.delivery_date = frappe.utils.today()
-        sales_order.discount_amount = flt(data.get("discount_amount", 0))
-        sales_order.sales_person = data.get("seller")  # Set sales person here!
+        # First validate stock for all items
+        items = data.get("items", [])
+        for item in items:
+            item_code = item.get("item_code")
+            if not item_code:
+                continue
+                
+            # Determine warehouse with fallbacks
+            warehouse = item.get("warehouse")
+            if not warehouse:
+                warehouse = frappe.db.get_value("Item", item_code, "default_warehouse")
+            if not warehouse:
+                warehouse = frappe.db.get_value("Company", company, "default_warehouse")
+            if not warehouse:
+                warehouse = frappe.db.get_value("Warehouse", {"company": company, "is_group": 0}, "name")
+                
+            item["warehouse"] = warehouse
+            qty = flt(item.get("qty", 0))
+            
+            # Get stock in selected warehouse
+            if warehouse:
+                bin_qty = frappe.db.get_value(
+                    "Bin",
+                    {"item_code": item_code, "warehouse": warehouse},
+                    "actual_qty"
+                )
+                actual_qty = flt(bin_qty) if bin_qty else 0
+            else:
+                actual_qty = 0
+            
+            if actual_qty < qty:
+                frappe.throw(_("المنتج {0} غير متوفّر في المخزن {1} بالكمية المطلوبة (المتوفّر: {2}, المطلوب: {3})").format(
+                    item_code, warehouse or "غير محدد", actual_qty, qty
+                ))
+
+        # Create POS Order instead of Sales Order
+        pos_order = frappe.new_doc("POS Order")
+        pos_order.customer = data.get("customer")
+        pos_order.company = company
+        pos_order.price_list = data.get("price_list") or frappe.db.get_single_value("POS Settings", "default_price_list") or "Standard Selling"
+        pos_order.branch = data.get("branch")
+        pos_order.posting_date = frappe.utils.today()
+        pos_order.discount_amount = flt(data.get("discount_amount", 0))
+        pos_order.seller = data.get("seller")
 
         for item in items:
-            sales_order.append("items", {
+            pos_order.append("items", {
                 "item_code": item["item_code"],
                 "qty": item["qty"],
                 "rate": item["rate"],
                 "warehouse": item["warehouse"]
             })
 
-        # Set missing values and insert
-        sales_order.set_missing_values()
-        sales_order.insert()
-        sales_order.submit()  # This will reserve stock if ERPNext is configured for it
+        pos_order.insert()
+        pos_order.submit()  # This will trigger on_submit in pos_order.py to create Sales Invoice
 
-        return {"name": sales_order.name}
+        return {"name": pos_order.name}
     except Exception as e:
         frappe.log_error(f"Error in register_pos_order: {str(e)}")
         frappe.throw(_("Error: {0}").format(str(e)))
